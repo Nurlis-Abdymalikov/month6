@@ -2,11 +2,10 @@ from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from rest_framework.generics import CreateAPIView
-
+from users.models import CustomUser
 from .serializers import (
     RegisterValidateSerializer,
     AuthValidateSerializer,
@@ -47,14 +46,16 @@ class RegistrationAPIView(CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        username = serializer.validated_data['username']
-        password = serializer.validated_data['password']
+        validated_data = serializer.validated_data
 
         # Use transaction to ensure data consistency
         with transaction.atomic():
-            user = User.objects.create_user(
-                username=username,
-                password=password,
+            user = CustomUser.objects.create_user(
+                email=validated_data['email'],
+                password=validated_data['password'],
+                username=validated_data.get('username', ''),
+                first_name=validated_data.get('first_name', ''),
+                last_name=validated_data.get('last_name', ''),
                 is_active=False
             )
 
@@ -83,7 +84,7 @@ class ConfirmUserAPIView(APIView):
         user_id = serializer.validated_data['user_id']
 
         with transaction.atomic():
-            user = User.objects.get(id=user_id)
+            user = CustomUser.objects.get(id=user_id)
             user.is_active = True
             user.save()
 
