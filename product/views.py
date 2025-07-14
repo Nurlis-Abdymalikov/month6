@@ -1,5 +1,6 @@
 from collections import OrderedDict
 from django.db import transaction
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -7,6 +8,8 @@ from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIV
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.views import APIView
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.tokens import AccessToken
 
 from .models import Category, Product, Review
 from .serializers import (
@@ -40,6 +43,7 @@ class CategoryListCreateAPIView(ListCreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     pagination_class = CustomPagination
+    authentication_classes = [JWTAuthentication]
 
     def post(self, request, *args, **kwargs):
         serializer = CategoryValidateSerializer(data=request.data)
@@ -66,27 +70,47 @@ class CategoryDetailAPIView(RetrieveUpdateDestroyAPIView):
         return Response(data=CategorySerializer(instance).data)
 
 
-class ProductListCreateAPIView(ListCreateAPIView):
-    queryset = Product.objects.select_related('category').all()
-    serializer_class = ProductSerializer
-    pagination_class = CustomPagination
-    permission_classes = [IsOwner | IsModeratorPermission | IsAnonymous]
+from datetime import datetime, timedelta
 
+class ProductListCreateAPIView(ListCreateAPIView):
     def post(self, request, *args, **kwargs):
-        if request.user.is_authenticated and request.user.is_staff:
+        if not request.user or not request.user.is_authenticated:
+            return Response({'detail': 'Authentication credentials were not provided.'},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        birthday_str = None
+        if request.auth:
+            birthday_str = request.auth.get('birthday')
+
+        if not birthday_str:
+            return Response({'detail': 'Дата рождения не указана.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            birthday = datetime.fromisoformat(birthday_str).date()
+        except ValueError:
+            return Response({'detail': 'Неверный формат даты рождения в токене.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        today = datetime.today().date()
+        age = (today - birthday).days // 365  # грубая оценка возраста в годах
+
+        if age < 18:
+            return Response({'detail': 'Вам должно быть 18 лет, чтобы создать продукт.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        if request.user.is_staff:
             return Response({'detail': 'Модераторам запрещено создавать продукты.'},
                             status=status.HTTP_403_FORBIDDEN)
 
         serializer = ProductValidateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        # Get validated data
         title = serializer.validated_data.get('title')
         description = serializer.validated_data.get('description')
         price = serializer.validated_data.get('price')
         category = serializer.validated_data.get('category')
 
-        # Create product
         product = Product.objects.create(
             title=title,
             description=description,
@@ -97,6 +121,8 @@ class ProductListCreateAPIView(ListCreateAPIView):
 
         return Response(data=ProductSerializer(product).data,
                         status=status.HTTP_201_CREATED)
+
+
 
 
 class ProductDetailAPIView(RetrieveUpdateDestroyAPIView):

@@ -5,6 +5,8 @@ from rest_framework import status
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from rest_framework.generics import CreateAPIView
+from rest_framework_simplejwt.views import TokenObtainPairView
+
 from users.models import CustomUser
 from .serializers import (
     RegisterValidateSerializer,
@@ -14,6 +16,8 @@ from .serializers import (
 from .models import ConfirmationCode
 import random
 import string
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from users.serializers import CustomTokenObtainSerializer
 
 
 class AuthorizationAPIView(CreateAPIView):
@@ -101,3 +105,5 @@ class ConfirmUserAPIView(CreateAPIView):
                 'key': token.key
             }
         )
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainSerializer
