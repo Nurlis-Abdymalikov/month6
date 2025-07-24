@@ -53,3 +53,6 @@ class CustomTokenObtainSerializer(TokenObtainPairSerializer):
         if user.birthday:
             token['birthday'] = user.birthday.isoformat()
         return token
+
+class GoogleLoginSerializer(serializers.Serializer):
+    code = serializers.CharField(required=True)
