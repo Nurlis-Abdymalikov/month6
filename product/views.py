@@ -10,6 +10,7 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import AccessToken
+from django.core. cache import cache
 
 from .models import Category, Product, Review
 from .serializers import (
@@ -73,6 +74,20 @@ class CategoryDetailAPIView(RetrieveUpdateDestroyAPIView):
 from datetime import datetime, timedelta
 
 class ProductListCreateAPIView(ListCreateAPIView):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+
+    def get(self, request, *args, **kwargs):
+        cached_data = cache.get('product_list')
+        if cached_data:
+            print("работает redis")
+            return Response(data=cached_data, status=status.HTTP_200_OK)
+        response = super().get(request, *args, **kwargs)
+        print("обычный response")
+        if response.data and len(response.data) > 0:
+            cache.set("product_list", response.data, timeout=120)
+        return response
+
     def post(self, request, *args, **kwargs):
         if not request.user or not request.user.is_authenticated:
             return Response({'detail': 'Authentication credentials were not provided.'},
@@ -93,7 +108,7 @@ class ProductListCreateAPIView(ListCreateAPIView):
                             status=status.HTTP_400_BAD_REQUEST)
 
         today = datetime.today().date()
-        age = (today - birthday).days // 365  # грубая оценка возраста в годах
+        age = (today - birthday).days // 365
 
         if age < 18:
             return Response({'detail': 'Вам должно быть 18 лет, чтобы создать продукт.'},

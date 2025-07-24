@@ -6,18 +6,18 @@ from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from rest_framework.generics import CreateAPIView
 from rest_framework_simplejwt.views import TokenObtainPairView
-
+from users.utils import set_confirmation_code
 from users.models import CustomUser
 from .serializers import (
     RegisterValidateSerializer,
     AuthValidateSerializer,
-    ConfirmationSerializer
 )
-from .models import ConfirmationCode
+from users.utils import get_confirmation_code, delete_confirmation_code
 import random
 import string
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from users.serializers import CustomTokenObtainSerializer
+from users.serializers import ConfirmationSerializer
 
 
 class AuthorizationAPIView(CreateAPIView):
@@ -53,7 +53,6 @@ class RegistrationAPIView(CreateAPIView):
 
         validated_data = serializer.validated_data
 
-        # Use transaction to ensure data consistency
         with transaction.atomic():
             user = CustomUser.objects.create_user(
                 email=validated_data['email'],
@@ -64,39 +63,46 @@ class RegistrationAPIView(CreateAPIView):
                 is_active=False
             )
 
-            # Create a random 6-digit code
-            code = ''.join(random.choices(string.digits, k=6))
-
-            confirmation_code = ConfirmationCode.objects.create(
-                user=user,
-                code=code
-            )
+            # Сохраняем код в Redis
+            code = set_confirmation_code(user.id)
 
         return Response(
             status=status.HTTP_201_CREATED,
             data={
                 'user_id': user.id,
-                'confirmation_code': code
+                'confirmation_code': code  # Пока просто возвращаем в ответ (для теста)
             }
         )
 
 
 class ConfirmUserAPIView(CreateAPIView):
     serializer_class = ConfirmationSerializer
+
     def post(self, request):
-        serializer = ConfirmationSerializer(data=request.data)
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         user_id = serializer.validated_data['user_id']
+        input_code = serializer.validated_data['code']
+
+        stored_code = get_confirmation_code(user_id)
+
+        if stored_code is None:
+            return Response({'detail': 'Код подтверждения истёк или не существует.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if stored_code != input_code:
+            return Response({'detail': 'Неверный код подтверждения.'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             user = CustomUser.objects.get(id=user_id)
             user.is_active = True
             user.save()
 
-            token, _ = Token.objects.get_or_create(user=user)
+            delete_confirmation_code(user_id)
 
-            ConfirmationCode.objects.filter(user=user).delete()
+            token, _ = Token.objects.get_or_create(user=user)
 
         return Response(
             status=status.HTTP_200_OK,
