@@ -18,7 +18,7 @@ import string
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from users.serializers import CustomTokenObtainSerializer
 from users.serializers import ConfirmationSerializer
-
+from users.tasks import send_opt_email
 
 class AuthorizationAPIView(CreateAPIView):
     serializer_class = AuthValidateSerializer
@@ -63,16 +63,18 @@ class RegistrationAPIView(CreateAPIView):
                 is_active=False
             )
 
-            # Сохраняем код в Redis
             code = set_confirmation_code(user.id)
+
+        send_opt_email.delay(user.email, code)
 
         return Response(
             status=status.HTTP_201_CREATED,
             data={
                 'user_id': user.id,
-                'confirmation_code': code  # Пока просто возвращаем в ответ (для теста)
+                'confirmation_code': code
             }
         )
+
 
 
 class ConfirmUserAPIView(CreateAPIView):
