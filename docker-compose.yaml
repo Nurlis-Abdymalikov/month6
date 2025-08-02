@@ -31,6 +31,17 @@ services:
     volumes:
       - redis_data:/data
 
+  celery_worker:
+    build:
+      context: .
+    command: celery -A shop_api worker --loglevel=info
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+
   celery_beat:
     build:
       context: .
@@ -42,7 +53,7 @@ services:
     volumes:
       - .:/app
 
-  celery_worker:
+  celery_flower:
     build:
       context: .
     command: celery -A shop_api worker --port=5555
